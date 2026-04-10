@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Smart Radio Monitor</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --green:      #0d6e2a;
+      --green-mid:  #158a35;
+      --green-light:#e8f5ec;
+      --red:        #b91c1c;
+      --red-light:  #fef2f2;
+      --orange:     #c2540a;
+      --orange-light:#fff7ed;
+      --black:      #0f0f0f;
+      --ink:        #1a1a1a;
+      --ink-mid:    #4a4a4a;
+      --ink-light:  #8a8a8a;
+      --rule:       #e2e2e2;
+      --bg:         #f7f6f3;
+      --white:      #ffffff;
+      --card-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+
+    /* ── TOP NAV ── */
+    nav {
+      background: var(--black);
+      border-bottom: 3px solid var(--green);
+      padding: 0 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .flag-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      width: 5px;
+    }
+
+    .flag-stack span {
+      display: block;
+      width: 5px;
+      height: 5px;
+      border-radius: 1px;
+    }
+
+    .fs-green  { background: #198a00; }
+    .fs-red    { background: #cc0000; }
+    .fs-black  { background: #888; }
+    .fs-orange { background: #e87722; }
+
+    .brand-text {
+      font-family: 'DM Serif Display', serif;
+      font-size: 1.25rem;
+      color: var(--white);
+      letter-spacing: 0.02em;
+    }
+
+    .brand-text em {
+      font-style: italic;
+      color: #e87722;
+    }
+
+    .nav-meta {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .nav-time {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.78rem;
+      color: #888;
+      letter-spacing: 0.05em;
+    }
+
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #aaa;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .live-badge .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #444;
+    }
+
+    .live-badge.on { color: #4ade80; border-color: rgba(74,222,128,0.3); background: rgba(74,222,128,0.08); }
+    .live-badge.on .dot { background: #4ade80; animation: pulse 1.2s infinite; }
+
+    /* ── LAYOUT ── */
+    .layout {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      grid-template-rows: auto 1fr;
+      min-height: calc(100vh - 64px);
+    }
+
+    /* ── SIDEBAR ── */
+    aside {
+      grid-row: 1 / 3;
+      background: var(--white);
+      border-right: 1px solid var(--rule);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-section {
+      border-bottom: 1px solid var(--rule);
+      padding: 20px;
+    }
+
+    .sidebar-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--ink-light);
+      margin-bottom: 12px;
+    }
+
+    /* Tabs */
+    .tab-bar {
+      display: flex;
+      gap: 2px;
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 3px;
+      margin-bottom: 14px;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 6px 8px;
+      text-align: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--ink-light);
+      transition: all 0.2s;
+      border: none;
+      background: none;
+    }
+
+    .tab.active {
+      background: var(--white);
+      color: var(--green);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Station cards */
+    .station-list { display: flex; flex-direction: column; gap: 6px; max-height: 340px; overflow-y: auto; }
+
+    .station-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s;
+      position: relative;
+    }
+
+    .station-item:hover { background: var(--green-light); border-color: #c8e6d0; }
+    .station-item.selected { background: var(--green-light); border-color: var(--green-mid); }
+
+    .station-icon {
+      width: 34px; height: 34px;
+      border-radius: 8px;
+      background: var(--green);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+      color: white;
+      font-weight: 700;
+      font-family: 'DM Mono', monospace;
+    }
+
+    .station-info { flex: 1; min-width: 0; }
+    .station-name { font-size: 0.83rem; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .station-meta { font-size: 0.7rem; color: var(--ink-light); margin-top: 1px; }
+
+    .fav-btn {
+      background: none; border: none;
+      font-size: 0.8rem; cursor: pointer;
+      opacity: 0.25; padding: 2px;
+      transition: opacity 0.2s;
+      flex-shrink: 0;
+    }
+    .fav-btn:hover, .fav-btn.saved { opacity: 1; }
+
+    /* Search */
+    .search-box {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    input[type="text"], select {
+      font-family: 'DM Sans', sans-serif;
+      padding: 9px 12px;
+      border-radius: 7px;
+      border: 1px solid var(--rule);
+      background: var(--bg);
+      color: var(--ink);
+      font-size: 0.84rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      width: 100%;
+    }
+
+    input[type="text"]:focus, select:focus {
+      border-color: var(--green-mid);
+      box-shadow: 0 0 0 3px rgba(21,138,53,0.1);
+    }
+
+    select { width: 100%; margin-bottom: 6px; }
+
+    /* Player */
+    .player-block {
+      padding: 20px;
+      background: var(--black);
+      margin: 0;
+    }
+
+    .player-station-name {
+      font-family: 'DM Serif Display', serif;
+      font-size: 1.1rem;
+      color: var(--white);
+      margin-bottom: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .player-station-meta { font-size: 0.72rem; color: #888; margin-bottom: 16px; }
+
+    .player-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .play-btn {
+      width: 42px; height: 42px;
+      border-radius: 50%;
+      background: var(--green);
+      border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem; color: white;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .play-btn:hover { background: var(--green-mid); transform: scale(1.05); }
+    .play-btn.stop { background: var(--red); }
+
+    .volume-wrap { flex: 1; display: flex; align-items: center; gap: 8px; }
+    .vol-icon { font-size: 0.8rem; color: #666; }
+    input[type="range"] { flex: 1; accent-color: #e87722; cursor: pointer; height: 4px; }
+
+    .player-waveform {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      height: 20px;
+      margin-top: 12px;
+    }
+
+    .wave-bar {
+      width: 3px;
+      background: #333;
+      border-radius: 2px;
+      height: 4px;
+      transition: height 0.1s;
+    }
+
+    .wave-bar.active {
+      background: var(--green-mid);
+      animation: wave var(--spd, 0.8s) ease-in-out infinite alternate;
+    }
+
+    @keyframes wave { to { height: var(--h, 16px); } }
+
+    /* Manual URL */
+    .url-section { padding: 16px 20px; border-bottom: 1px solid var(--rule); }
+    .url-row { display: flex; gap: 6px; margin-top: 8px; }
+    .url-row input { flex: 1; }
+
+    /* ── MAIN CONTENT ── */
+    main {
+      padding: 28px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      min-width: 0;
+    }
+
+    /* Page header */
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .page-title {
+      font-family: 'DM Serif Display', serif;
+      font-size: 1.8rem;
+      color: var(--ink);
+      line-height: 1.2;
+    }
+
+    .page-title span { color: var(--green); }
+    .page-subtitle { font-size: 0.84rem; color: var(--ink-light); margin-top: 4px; }
+
+    .header-actions { display: flex; gap: 10px; align-items: center; }
+
+    /* Buttons */
+    .btn {
+      font-family: 'DM Sans', sans-serif;
+      padding: 9px 18px;
+      border: none;
+      border-radius: 7px;
+      font-size: 0.83rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: inline-flex; align-items: center; gap: 6px;
+      white-space: nowrap;
+    }
+
+    .btn:hover { opacity: 0.88; transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+
+    .btn-primary { background: var(--green); color: white; }
+    .btn-danger  { background: var(--red);   color: white; }
+    .btn-warm    { background: var(--orange); color: white; }
+    .btn-ghost   { background: transparent; color: var(--ink-mid); border: 1px solid var(--rule); }
+    .btn-ghost:hover { border-color: var(--green); color: var(--green); background: var(--green-light); }
+
+    /* Status strip */
+    .status-strip {
+      display: flex;
+      gap: 16px;
+      background: var(--white);
+      border: 1px solid var(--rule);
+      border-radius: 10px;
+      padding: 14px 20px;
+      box-shadow: var(--card-shadow);
+    }
+
+    .stat-item { flex: 1; text-align: center; }
+    .stat-value { font-family: 'DM Mono', monospace; font-size: 1.4rem; font-weight: 500; color: var(--ink); }
+    .stat-value.green { color: var(--green); }
+    .stat-value.red   { color: var(--red); }
+    .stat-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-light); margin-top: 2px; font-weight: 600; }
+    .stat-divider { width: 1px; background: var(--rule); }
+
+    /* Transcript panel */
+    .panel {
+      background: var(--white);
+      border: 1px solid var(--rule);
+      border-radius: 12px;
+      box-shadow: var(--card-shadow);
+      overflow: hidden;
+      flex: 1;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 22px;
+      border-bottom: 1px solid var(--rule);
+      background: var(--white);
+    }
+
+    .panel-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--ink-mid);
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    .panel-actions { display: flex; gap: 8px; }
+
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.72rem; font-weight: 700;
+      border: 1px solid var(--rule);
+      color: var(--ink-light);
+      background: var(--bg);
+      letter-spacing: 0.04em;
+    }
+
+    .status-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: #ccc; }
+    .status-pill.active { color: var(--green); border-color: #a7d7b5; background: var(--green-light); }
+    .status-pill.active .dot { background: var(--green); animation: pulse 1.2s infinite; }
+
+    #transcript {
+      padding: 20px 22px;
+      height: 420px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      scroll-behavior: smooth;
+    }
+
+    /* Transcript lines */
+    .line {
+      display: grid;
+      grid-template-columns: 72px 1fr;
+      gap: 14px;
+      align-items: start;
+      animation: slideIn 0.3s ease;
+    }
+
+    .line-time {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--orange);
+      font-weight: 500;
+      padding-top: 2px;
+      text-align: right;
+    }
+
+    .line-body {
+      background: var(--bg);
+      border-left: 2px solid var(--rule);
+      padding: 10px 14px;
+      border-radius: 0 8px 8px 0;
+      font-size: 0.88rem;
+      line-height: 1.65;
+      color: var(--ink);
+      transition: border-color 0.2s;
+    }
+
+    .line:hover .line-body { border-left-color: var(--green-mid); }
+
+    .line.new .line-body { border-left-color: var(--red); background: var(--red-light); animation: highlight 2s ease forwards; }
+
+    @keyframes highlight {
+      0%   { background: var(--red-light); border-left-color: var(--red); }
+      100% { background: var(--bg);        border-left-color: var(--rule); }
+    }
+
+    .empty-state {
+      margin: auto;
+      text-align: center;
+      color: var(--ink-light);
+    }
+
+    .empty-state .empty-icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.3; }
+    .empty-state p { font-size: 0.86rem; line-height: 1.7; }
+
+    /* Scrollbar */
+    #transcript::-webkit-scrollbar { width: 5px; }
+    #transcript::-webkit-scrollbar-track { background: transparent; }
+    #transcript::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 10px; }
+
+    /* Animations */
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    @keyframes slideIn { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} }
+
+    /* Loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid var(--rule);
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .no-results { font-size: 0.82rem; color: var(--ink-light); text-align: center; padding: 20px 0; }
+
+    audio { display: none; }
+
+    /* Responsive tweak */
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      aside { grid-row: auto; border-right: none; border-bottom: 1px solid var(--rule); }
+      nav { padding: 0 20px; }
+      main { padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-brand">
+    <div class="flag-stack">
+      <span class="fs-green"></span>
+      <span class="fs-red"></span>
+      <span class="fs-black"></span>
+      <span class="fs-orange"></span>
+    </div>
+    <div class="brand-text">Smart Radio <em>Monitor</em></div>
+  </div>
+  <div class="nav-meta">
+    <div class="nav-time" id="navClock">--:--:--</div>
+    <div class="live-badge" id="liveBadge">
+      <div class="dot"></div>
+      OFF AIR
+    </div>
+  </div>
+</nav>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <aside>
+
+    <!-- Station finder tabs -->
+    <div class="sidebar-section" style="flex:1; overflow:hidden; display:flex; flex-direction:column;">
+      <div class="sidebar-label">Station Finder</div>
+      <div class="tab-bar">
+        <button class="tab active" onclick="switchTab('directory')">Directory</button>
+        <button class="tab" onclick="switchTab('search')">Search</button>
+        <button class="tab" onclick="switchTab('favourites')">★ Saved</button>
+      </div>
+
+      <!-- Directory -->
+      <div class="tab-panel active" id="tab-directory" style="overflow-y:auto; flex:1;">
+        <div class="station-list" id="directoryList"></div>
+      </div>
+
+      <!-- Search -->
+      <div class="tab-panel" id="tab-search" style="overflow-y:auto; flex:1;">
+        <div class="search-box">
+          <input type="text" id="searchInput" placeholder="Search stations…" />
+        </div>
+        <select id="countrySelect" style="margin-bottom:8px;">
+          <option value="">All Countries</option>
+          <option value="ZM">🇿🇲 Zambia</option>
+          <option value="ZA">🇿🇦 South Africa</option>
+          <option value="GB">🇬🇧 United Kingdom</option>
+          <option value="US">🇺🇸 United States</option>
+          <option value="KE">🇰🇪 Kenya</option>
+          <option value="NG">🇳🇬 Nigeria</option>
+          <option value="GH">🇬🇭 Ghana</option>
+          <option value="AU">🇦🇺 Australia</option>
+          <option value="FR">🇫🇷 France</option>
+          <option value="DE">🇩🇪 Germany</option>
+        </select>
+        <button class="btn btn-primary" style="width:100%; justify-content:center; margin-bottom:12px;" onclick="searchStations()">Search</button>
+        <div class="station-list" id="searchList"><p class="no-results">Enter a name or select a country.</p></div>
+      </div>
+
+      <!-- Favourites -->
+      <div class="tab-panel" id="tab-favourites" style="overflow-y:auto; flex:1;">
+        <div class="station-list" id="favouritesList"></div>
+      </div>
+    </div>
+
+    <!-- Manual URL -->
+    <div class="url-section">
+      <div class="sidebar-label">Manual Stream URL</div>
+      <div class="url-row">
+        <input type="text" id="urlInput" placeholder="https://…/stream.mp3" />
+        <button class="btn btn-ghost" onclick="loadManualUrl()" style="padding:9px 12px;">→</button>
+      </div>
+    </div>
+
+    <!-- Player -->
+    <div class="player-block">
+      <div class="player-station-name" id="playerName">No station selected</div>
+      <div class="player-station-meta" id="playerMeta">Select a station to begin</div>
+      <div class="player-controls">
+        <button class="play-btn" id="playBtn" onclick="togglePlay()">▶</button>
+        <div class="volume-wrap">
+          <span class="vol-icon">🔈</span>
+          <input type="range" id="volume" min="0" max="1" step="0.05" value="0.8" oninput="setVolume(this.value)"/>
+          <span class="vol-icon">🔊</span>
+        </div>
+      </div>
+      <div class="player-waveform" id="waveform"></div>
+    </div>
+
+  </aside>
+
+  <!-- MAIN -->
+  <main>
+
+    <div class="page-header">
+      <div>
+        <div class="page-title">Broadcast <span>Transcript</span></div>
+        <div class="page-subtitle">Live radio transcription powered by Whisper AI</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-primary" onclick="startTranscription()">▶ Start</button>
+        <button class="btn btn-danger"  onclick="stopTranscription()">■ Stop</button>
+        <button class="btn btn-ghost"   onclick="clearTranscript()">✕ Clear</button>
+        <button class="btn btn-warm"    onclick="exportTranscript()">↓ Export .txt</button>
+      </div>
+    </div>
+
+    <!-- Stats strip -->
+    <div class="status-strip">
+      <div class="stat-item">
+        <div class="stat-value" id="statStatus">—</div>
+        <div class="stat-label">Status</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <div class="stat-value green" id="statLines">0</div>
+        <div class="stat-label">Segments</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <div class="stat-value" id="statWords">0</div>
+        <div class="stat-label">Words</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <div class="stat-value" id="statStation">—</div>
+        <div class="stat-label">Station</div>
+      </div>
+    </div>
+
+    <!-- Transcript panel -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          📄 Live Transcript
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div class="status-pill" id="statusPill">
+            <div class="dot"></div>
+            <span id="statusText">Idle</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="transcript">
+        <div class="empty-state">
+          <div class="empty-icon">📻</div>
+          <p>Select a station from the sidebar<br>and press <strong>Start</strong> to begin transcribing.<br><br><small>First segment takes ~15 seconds.</small></p>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<audio id="audioPlayer"></audio>
+
+<script>
+  // ── Clock ──
+  function updateClock() {
+    document.getElementById("navClock").textContent = new Date().toLocaleTimeString('en-GB');
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // ── Waveform ──
+  const waveform = document.getElementById("waveform");
+  for (let i = 0; i < 28; i++) {
+    const b = document.createElement("div");
+    b.className = "wave-bar";
+    b.style.setProperty("--spd", (0.4 + Math.random() * 0.6) + "s");
+    b.style.setProperty("--h", (6 + Math.random() * 14) + "px");
+    waveform.appendChild(b);
+  }
+
+  function setWaveActive(on) {
+    waveform.querySelectorAll(".wave-bar").forEach(b => b.classList.toggle("active", on));
+  }
+
+  // ── Directory ──
+  const DIRECTORY = [
+    { name: "BBC World Service", country: "UK",  genre: "News",    url: "http://stream.live.vc.bbcmedia.co.uk/bbc_world_service" },
+    { name: "NPR News",          country: "US",  genre: "News",    url: "https://npr-ice.streamguys1.com/live.mp3" },
+    { name: "SomaFM Groove",     country: "US",  genre: "Ambient", url: "http://ice1.somafm.com/groovesalad-128-mp3" },
+    { name: "SomaFM Drone",      country: "US",  genre: "Ambient", url: "http://ice1.somafm.com/dronezone-128-mp3" },
+    { name: "France Info",       country: "FR",  genre: "News",    url: "http://direct.franceinfo.fr/live/franceinfo-midfi.mp3" },
+    { name: "DW Radio",          country: "DE",  genre: "News",    url: "https://stream.deutschewelle.com/dw-english-radio/mp3-128" },
+    { name: "Capital FM Kenya",  country: "KE",  genre: "Pop",     url: "https://capitalfm.co.ke/stream" },
+    { name: "Smooth Radio",      country: "UK",  genre: "Easy",    url: "https://media-ice.musicradio.com/SmoothUKMP3" },
+  ];
+
+  let currentStation = null;
+  let isPlaying = false;
+  let polling = null;
+  let knownLines = 0;
+  let wordCount = 0;
+  const audio = document.getElementById("audioPlayer");
+
+  function stationInitials(name) {
+    return name.split(" ").slice(0,2).map(w => w[0]).join("").toUpperCase();
+  }
+
+  function stationItemHTML(s, prefix, idx) {
+    const favs = getFavourites();
+    const isFav = favs.some(f => f.url === s.url);
+    return `
+      <div class="station-item" id="${prefix}-${idx}" onclick="selectStation('${escUrl(s.url)}','${esc(s.name)}','${esc(s.country)}','${esc(s.genre||'')}')">
+        <div class="station-icon">${stationInitials(s.name)}</div>
+        <div class="station-info">
+          <div class="station-name">${s.name}</div>
+          <div class="station-meta">${s.country} · ${s.genre || 'Radio'}</div>
+        </div>
+        <button class="fav-btn ${isFav?'saved':''}" onclick="event.stopPropagation();toggleFav('${escUrl(s.url)}','${esc(s.name)}','${esc(s.country)}','${esc(s.genre||'')}',this)" title="Save">★</button>
+      </div>`;
+  }
+
+  function esc(s)    { return (s||"").replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+  function escUrl(s) { return (s||"").replace(/'/g,"%27"); }
+
+  function buildDirectory() {
+    document.getElementById("directoryList").innerHTML =
+      DIRECTORY.map((s,i) => stationItemHTML(s,"dir",i)).join("");
+  }
+
+  // ── Tabs ──
+  function switchTab(name) {
+    document.querySelectorAll(".tab").forEach((t,i) =>
+      t.classList.toggle("active", ["directory","search","favourites"][i] === name));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    document.getElementById("tab-" + name).classList.add("active");
+    if (name === "favourites") renderFavourites();
+  }
+
+  // ── Select station ──
+  function selectStation(url, name, country, genre) {
+    currentStation = { url, name, country, genre };
+    document.getElementById("urlInput").value = url;
+    document.getElementById("playerName").textContent = name;
+    document.getElementById("playerMeta").textContent = country + (genre ? " · " + genre : "");
+    document.getElementById("statStation").textContent = name.split(" ")[0];
+    document.querySelectorAll(".station-item").forEach(el => el.classList.remove("selected"));
+  }
+
+  // ── Play ──
+  function togglePlay() {
+    const url = currentStation ? currentStation.url : document.getElementById("urlInput").value.trim();
+    if (!url) return alert("Select a station or enter a stream URL first.");
+    if (!isPlaying) {
+      audio.src = "/proxy?url=" + encodeURIComponent(url);
+      audio.volume = parseFloat(document.getElementById("volume").value);
+      audio.play()
+        .then(() => {
+          isPlaying = true;
+          document.getElementById("playBtn").textContent = "⏹";
+          document.getElementById("playBtn").classList.add("stop");
+          setWaveActive(true);
+          document.getElementById("liveBadge").className = "live-badge on";
+          document.getElementById("liveBadge").innerHTML = '<div class="dot"></div> ON AIR';
+        })
+        .catch(() => alert("Could not play stream. The station may block direct browser playback."));
+    } else {
+      audio.pause(); audio.src = "";
+      isPlaying = false;
+      document.getElementById("playBtn").textContent = "▶";
+      document.getElementById("playBtn").classList.remove("stop");
+      setWaveActive(false);
+      document.getElementById("liveBadge").className = "live-badge";
+      document.getElementById("liveBadge").innerHTML = '<div class="dot"></div> OFF AIR';
+    }
+  }
+
+  function setVolume(v) { audio.volume = parseFloat(v); }
+
+  function loadManualUrl() {
+    const url = document.getElementById("urlInput").value.trim();
+    if (!url) return;
+    selectStation(url, "Custom Stream", "Manual", "");
+  }
+
+  // ── Search ──
+  async function searchStations() {
+    const name    = document.getElementById("searchInput").value.trim();
+    const country = document.getElementById("countrySelect").value;
+    const list    = document.getElementById("searchList");
+    list.innerHTML = '<p class="no-results"><span class="spinner"></span> Searching…</p>';
+    try {
+      let url = `https://de1.api.radio-browser.info/json/stations/search?limit=30&hidebroken=true&order=clickcount&reverse=true`;
+      if (name)    url += `&name=${encodeURIComponent(name)}`;
+      if (country) url += `&countrycode=${country}`;
+      const res  = await fetch(url);
+      const data = await res.json();
+      const valid = data.filter(s => s.url_resolved);
+      if (!valid.length) { list.innerHTML = '<p class="no-results">No stations found.</p>'; return; }
+      list.innerHTML = valid.map((s,i) => stationItemHTML({
+        name: s.name, country: s.country,
+        genre: s.tags ? s.tags.split(",")[0] : "",
+        url: s.url_resolved
+      },"sr",i)).join("");
+    } catch(e) {
+      list.innerHTML = '<p class="no-results">Search failed. Check your connection.</p>';
+    }
+  }
+
+  document.getElementById("searchInput").addEventListener("keydown", e => {
+    if (e.key === "Enter") searchStations();
+  });
+
+  // ── Favourites ──
+  function getFavourites() {
+    try { return JSON.parse(localStorage.getItem("srm_fav") || "[]"); } catch { return []; }
+  }
+
+  function saveFavourites(f) { localStorage.setItem("srm_fav", JSON.stringify(f)); }
+
+  function toggleFav(url, name, country, genre, btn) {
+    let favs = getFavourites();
+    const idx = favs.findIndex(f => f.url === url);
+    if (idx === -1) { favs.push({url,name,country,genre}); btn.classList.add("saved"); }
+    else            { favs.splice(idx,1); btn.classList.remove("saved"); }
+    saveFavourites(favs);
+    renderFavourites();
+  }
+
+  function renderFavourites() {
+    const favs = getFavourites();
+    const list = document.getElementById("favouritesList");
+    if (!favs.length) { list.innerHTML = '<p class="no-results">No saved stations yet.<br>Click ★ on any station.</p>'; return; }
+    list.innerHTML = favs.map((s,i) => stationItemHTML(s,"fv",i)).join("");
+  }
+
+  // ── Transcription ──
+  function startTranscription() {
+    const url = currentStation ? currentStation.url : document.getElementById("urlInput").value.trim();
+    if (!url) return alert("Select a station first.");
+
+    fetch("/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url })
+    });
+
+    document.getElementById("statusPill").classList.add("active");
+    document.getElementById("statusText").textContent = "Transcribing";
+    document.getElementById("statStatus").textContent = "Live";
+    document.getElementById("statStatus").className = "stat-value green";
+    document.getElementById("transcript").innerHTML = "";
+    knownLines = 0; wordCount = 0;
+    updateStats();
+
+    if (polling) clearInterval(polling);
+    polling = setInterval(fetchTranscript, 3000);
+  }
+
+  function stopTranscription() {
+    fetch("/stop", { method: "POST" });
+    clearInterval(polling);
+    document.getElementById("statusPill").classList.remove("active");
+    document.getElementById("statusText").textContent = "Stopped";
+    document.getElementById("statStatus").textContent = "Stopped";
+    document.getElementById("statStatus").className = "stat-value red";
+  }
+
+  function clearTranscript() {
+    document.getElementById("transcript").innerHTML =
+      '<div class="empty-state"><div class="empty-icon">📻</div><p>Transcript cleared.</p></div>';
+    knownLines = 0; wordCount = 0;
+    updateStats();
+  }
+
+  function updateStats() {
+    document.getElementById("statLines").textContent = knownLines;
+    document.getElementById("statWords").textContent = wordCount;
+  }
+
+  function fetchTranscript() {
+    fetch("/transcript")
+      .then(r => r.json())
+      .then(data => {
+        const box = document.getElementById("transcript");
+        for (let i = knownLines; i < data.lines.length; i++) {
+          const raw   = data.lines[i];
+          const match = raw.match(/^\[(\d{2}:\d{2}:\d{2})\]\s(.+)$/);
+          const div   = document.createElement("div");
+          div.className = "line new";
+          if (match) {
+            wordCount += match[2].split(/\s+/).length;
+            div.innerHTML = `<div class="line-time">${match[1]}</div><div class="line-body">${match[2]}</div>`;
+          } else {
+            wordCount += raw.split(/\s+/).length;
+            div.innerHTML = `<div class="line-time"></div><div class="line-body">${raw}</div>`;
+          }
+          setTimeout(() => div.classList.remove("new"), 2500);
+          box.appendChild(div);
+        }
+        knownLines = data.lines.length;
+        updateStats();
+        box.scrollTop = box.scrollHeight;
+      });
+  }
+
+  function exportTranscript() { window.location.href = "/export"; }
+
+  // ── Init ──
+  buildDirectory();
+  renderFavourites();
+</script>
+</body>
+</html>
+```
