@@ -16,7 +16,7 @@ class Station(db.Model):
     chunks      = db.relationship("AudioChunk", backref="station", lazy=True)
     transcripts = db.relationship("Transcript", backref="station", lazy=True)
 
-class AudioChunk(db.Model):
+class AudioChunk(db.Model):  
     __tablename__ = "audio_chunks"
     id         = db.Column(db.Integer, primary_key=True)
     station_id = db.Column(db.Integer, db.ForeignKey("stations.id"), nullable=False)
