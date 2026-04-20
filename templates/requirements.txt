@@ -1,0 +1,8 @@
+flask
+openai-whisper
+requests
+flask-sqlalchemy
+psycopg2-binary
+soundfile
+numpy
+torch
