@@ -245,6 +245,24 @@
     .save-msg { font-size: 0.82rem; color: var(--green); font-weight: 600; display: none; }
     .save-msg.show { display: block; }
 
+    .recipient-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.recipient-info { flex: 1; min-width: 0; }
+.recipient-email { font-size: 0.85rem; font-weight: 600; color: var(--ink); }
+.recipient-name  { font-size: 0.72rem; color: var(--ink-light); margin-top: 2px; }
+.recipient-actions { display: flex; gap: 6px; align-items: center; }
+.badge-active   { background: var(--green-light); color: var(--green); font-size: 0.7rem; font-weight: 700; padding: 3px 8px; border-radius: 10px; }
+.badge-inactive { background: var(--bg); color: var(--ink-light); font-size: 0.7rem; font-weight: 700; padding: 3px 8px; border-radius: 10px; border: 1px solid var(--rule); }
+
     /* Animations */
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
     @keyframes slideIn { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} }
@@ -486,9 +504,10 @@
       </div>
     </div>
 
+    <!-- SMTP Config -->
     <div class="settings-card">
-      <h2>Email Alerts</h2>
-      <p>Receive an email whenever a monitored keyword is detected in a broadcast. Uses Gmail SMTP — you'll need an App Password from your Google account.</p>
+      <h2>Email Configuration</h2>
+      <p>Configure your Gmail account to send alert emails. You need a Gmail App Password — see instructions below.</p>
 
       <div class="form-group">
         <div class="form-label">Sender Gmail Address</div>
@@ -496,11 +515,7 @@
       </div>
       <div class="form-group">
         <div class="form-label">Gmail App Password</div>
-        <input type="text" id="emailPassword" placeholder="xxxx xxxx xxxx xxxx"/>
-      </div>
-      <div class="form-group">
-        <div class="form-label">Send Alerts To</div>
-        <input type="text" id="emailReceiver" placeholder="alerts@yourdomain.com"/>
+        <input type="password" id="emailPassword" placeholder="xxxx xxxx xxxx xxxx"/>
       </div>
 
       <div class="toggle-row">
@@ -509,11 +524,28 @@
       </div>
 
       <div style="margin-top:16px;display:flex;align-items:center;gap:12px;">
-        <button class="btn btn-primary" onclick="saveEmailConfig()">Save Settings</button>
+        <button class="btn btn-primary" onclick="saveEmailConfig()">Save Configuration</button>
         <span class="save-msg" id="saveMsg">✓ Saved!</span>
       </div>
     </div>
 
+    <!-- Email Recipients -->
+    <div class="settings-card">
+      <h2>Alert Recipients</h2>
+      <p>Manage who receives email alerts when keywords are detected. All active recipients will be notified.</p>
+
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        <input type="text" id="recipientName"  placeholder="Name (optional)" style="width:160px;"/>
+        <input type="text" id="recipientEmail" placeholder="email@example.com" style="flex:1;min-width:200px;"/>
+        <button class="btn btn-primary" onclick="addRecipient()">Add Recipient</button>
+      </div>
+
+      <div id="recipientsList" style="display:flex;flex-direction:column;gap:8px;">
+        <p class="no-results">No recipients added yet.</p>
+      </div>
+    </div>
+
+    <!-- Instructions -->
     <div class="settings-card">
       <h2>How to get a Gmail App Password</h2>
       <p>
@@ -943,7 +975,7 @@
       const highlighted = q ? r.text.replace(new RegExp(`(${q})`, "gi"), '<span class="result-highlight">$1</span>') : r.text;
       return `
         <div class="search-result-item">
-          <div class="result-meta">${r.created_at}</div>
+          <div class="result-meta">${r.station_name} · ${r.created_at}</div>
           <div class="result-text">${highlighted}</div>
         </div>`;
     }).join("");
@@ -951,36 +983,93 @@
 
   document.getElementById("searchQuery").addEventListener("keydown", e => { if (e.key==="Enter") runSearch(); });
 
-  // ── Email Settings ──
-  async function loadEmailConfig() {
-    const res  = await fetch("/email_config");
-    const data = await res.json();
-    document.getElementById("emailSender").value   = data.sender || "";
-    document.getElementById("emailReceiver").value = data.receiver || "";
-    emailEnabled = data.enabled;
-    document.getElementById("emailToggle").classList.toggle("on", emailEnabled);
+  // ── Email Config ──
+async function loadEmailConfig() {
+  const res  = await fetch("/email_config");
+  const data = await res.json();
+  document.getElementById("emailSender").value = data.sender || "";
+  emailEnabled = data.enabled;
+  document.getElementById("emailToggle").classList.toggle("on", emailEnabled);
+  loadRecipients();
+}
+
+function toggleEmail() {
+  emailEnabled = !emailEnabled;
+  document.getElementById("emailToggle").classList.toggle("on", emailEnabled);
+}
+
+async function saveEmailConfig() {
+  await fetch("/email_config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sender:   document.getElementById("emailSender").value.trim(),
+      password: document.getElementById("emailPassword").value.trim(),
+      enabled:  emailEnabled
+    })
+  });
+  const msg = document.getElementById("saveMsg");
+  msg.classList.add("show");
+  setTimeout(() => msg.classList.remove("show"), 2500);
+}
+
+// ── Email Recipients ──
+async function loadRecipients() {
+  const res  = await fetch("/email_recipients");
+  const data = await res.json();
+  const list = document.getElementById("recipientsList");
+
+  if (!data.recipients.length) {
+    list.innerHTML = '<p class="no-results">No recipients added yet.</p>';
+    return;
   }
 
-  function toggleEmail() {
-    emailEnabled = !emailEnabled;
-    document.getElementById("emailToggle").classList.toggle("on", emailEnabled);
-  }
+  list.innerHTML = data.recipients.map(r => `
+    <div class="recipient-item">
+      <div class="recipient-info">
+        <div class="recipient-email">${r.email}</div>
+        ${r.name ? `<div class="recipient-name">${r.name}</div>` : ''}
+      </div>
+      <div class="recipient-actions">
+        <span class="${r.active ? 'badge-active' : 'badge-inactive'}">${r.active ? 'Active' : 'Paused'}</span>
+        <button class="btn btn-ghost btn-sm" onclick="toggleRecipient(${r.id}, ${r.active})">
+          ${r.active ? '⏸ Pause' : '▶ Enable'}
+        </button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red);" onclick="deleteRecipient(${r.id})">🗑</button>
+      </div>
+    </div>`).join("");
+}
 
-  async function saveEmailConfig() {
-    const res = await fetch("/email_config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sender:   document.getElementById("emailSender").value.trim(),
-        password: document.getElementById("emailPassword").value.trim(),
-        receiver: document.getElementById("emailReceiver").value.trim(),
-        enabled:  emailEnabled
-      })
-    });
-    const msg = document.getElementById("saveMsg");
-    msg.classList.add("show");
-    setTimeout(() => msg.classList.remove("show"), 2500);
-  }
+async function addRecipient() {
+  const email = document.getElementById("recipientEmail").value.trim();
+  const name  = document.getElementById("recipientName").value.trim();
+  if (!email) return alert("Please enter an email address.");
+  const res  = await fetch("/email_recipients", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, name })
+  });
+  const data = await res.json();
+  if (data.error) return alert(data.error);
+  document.getElementById("recipientEmail").value = "";
+  document.getElementById("recipientName").value  = "";
+  loadRecipients();
+}
+
+async function toggleRecipient(id, currentlyActive) {
+  await fetch(`/email_recipients/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ active: !currentlyActive })
+  });
+  loadRecipients();
+}
+
+async function deleteRecipient(id) {
+  if (!confirm("Remove this recipient?")) return;
+  await fetch(`/email_recipients/${id}`, { method: "DELETE" });
+  loadRecipients();
+}
 
   // ── Init ──
   buildDirectory();

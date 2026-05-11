@@ -54,3 +54,18 @@ class Alert(db.Model):
     station_name  = db.Column(db.String(200))
     sent_at       = db.Column(db.DateTime, default=datetime.utcnow)
     read          = db.Column(db.Boolean, default=False)
+
+class EmailRecipient(db.Model):
+    __tablename__ = "email_recipients"
+    id         = db.Column(db.Integer, primary_key=True)
+    email      = db.Column(db.String(200), nullable=False, unique=True)
+    name       = db.Column(db.String(200))
+    active     = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class EmailConfig(db.Model):
+    __tablename__ = "email_config"
+    id       = db.Column(db.Integer, primary_key=True)
+    sender   = db.Column(db.String(200), default="")
+    password = db.Column(db.String(500), default="")
+    enabled  = db.Column(db.Boolean, default=False)
