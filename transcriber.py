@@ -18,12 +18,16 @@ def capture_and_transcribe(stream_url, chunk_seconds=15):
     try:
         proc = subprocess.run(
             [
-                "ffmpeg", "-y",
-                "-i", stream_url,
-                "-t", str(chunk_seconds),
-                "-ar", "16000",
-                "-ac", "1",
-                "-f", "wav",
+                    "ffmpeg", "-y",
+                    "-fflags", "nobuffer+discardcorrupt",
+                    "-flags", "low_delay",
+                    "-rtbufsize", "32",
+                    "-i", stream_url,
+                    "-ss", "2",
+                    "-t", str(chunk_seconds),
+                    "-ar", "16000",
+                    "-ac", "1",
+                    "-f", "wav",
                 tmp_path,
             ],
             stdout=subprocess.DEVNULL,

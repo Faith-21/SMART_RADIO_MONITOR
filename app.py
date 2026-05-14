@@ -335,9 +335,10 @@ def search():
     if station_id:
         q = q.filter(Transcript.station_id == station_id)
     if date_from:
-        q = q.filter(Transcript.created_at >= datetime.strptime(date_from, "%Y-%m-%d"))
+        q = q.filter(Transcript.created_at >= datetime.strptime(date_from, "%Y-%m-%d").replace(hour=0, minute=0, second=0))
     if date_to:
-        q = q.filter(Transcript.created_at <= datetime.strptime(date_to, "%Y-%m-%d"))
+        from datetime import timedelta
+        q = q.filter(Transcript.created_at <= datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1))
 
     results = q.join(Station).order_by(Transcript.created_at.desc()).limit(100).all()
     return {"results": [{
