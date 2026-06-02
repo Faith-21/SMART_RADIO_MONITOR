@@ -150,13 +150,19 @@ def proxy():
             "Connection": "keep-alive",
             "Icy-MetaData": "0",
         })
+
         content_type = req.headers.get("Content-Type", "audio/mpeg")
-        if "icy" in content_type.lower():
+        ct = content_type.lower()
+        if any(x in ct for x in ["icy", "octet-stream", "x-scream"]):
             content_type = "audio/mpeg"
+        elif "aacp" in ct:
+            content_type = "audio/aacp"
+        elif "aac" in ct:
+            content_type = "audio/aac"
 
         def generate():
             try:
-                for chunk in req.iter_content(chunk_size=8192):
+                for chunk in req.iter_content(chunk_size=16384):
                     if chunk:
                         yield chunk
             except Exception:

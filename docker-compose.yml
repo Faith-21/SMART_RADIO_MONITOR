@@ -1,0 +1,34 @@
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: smart_radio_monitor
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      DB_URL: postgresql://postgres:${DB_PASSWORD}@db:5432/smart_radio_monitor
+      SECRET_KEY: ${SECRET_KEY}
+      FLASK_DEBUG: "0"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - whisper_cache:/root/.cache/whisper
+
+volumes:
+  postgres_data:
+  whisper_cache:
