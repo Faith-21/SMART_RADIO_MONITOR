@@ -17,8 +17,8 @@ services:
   app:
     build: .
     restart: unless-stopped
-    ports:
-      - "5000:5000"
+    expose:
+      - "5000"
     environment:
       DB_URL: postgresql://postgres:${DB_PASSWORD}@db:5432/smart_radio_monitor
       SECRET_KEY: ${SECRET_KEY}
@@ -29,6 +29,21 @@ services:
     volumes:
       - whisper_cache:/root/.cache/whisper
 
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "81:81"
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+    depends_on:
+      - app
+
 volumes:
   postgres_data:
   whisper_cache:
+  npm_data:
+  npm_letsencrypt:
