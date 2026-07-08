@@ -58,7 +58,10 @@ def send_email_alert(keyword, station_name, matched_text):
         password = config.password
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
             server.login(sender, password)
             for r in recipients:
                 msg = MIMEMultipart()
@@ -432,5 +435,34 @@ def delete_recipient(rid):
     return {"status": "deleted"}
 
 
+@app.route("/test_email", methods=["POST"])
+def test_email():
+    config = EmailConfig.query.first()
+    if not config:
+        return {"error": "No email config found"}, 400
+    if not config.enabled:
+        return {"error": "Email alerts are disabled in config"}, 400
+    recipients = EmailRecipient.query.filter_by(active=True).all()
+    if not recipients:
+        return {"error": "No active recipients configured"}, 400
+
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(config.sender, config.password)
+            for r in recipients:
+                msg = MIMEMultipart()
+                msg["From"]    = config.sender
+                msg["To"]      = r.email
+                msg["Subject"] = "Smart Radio Monitor — Test Email"
+                msg.attach(MIMEText("This is a test email from Smart Radio Monitor.", "plain"))
+                server.sendmail(config.sender, r.email, msg.as_string())
+        return {"status": "sent", "recipients": [r.email for r in recipients]}
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+
 if __name__ == "__main__":
-    app.run(debug=os.environ.get("FLASK_DEBUG", "0") == "1")
+    app.run(host="0.0.0.0", debug=os.environ.get("FLASK_DEBUG", "0") == "1")
