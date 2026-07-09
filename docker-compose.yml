@@ -28,6 +28,7 @@ services:
         condition: service_healthy
     volumes:
       - whisper_cache:/root/.cache/whisper
+      - media:/app/media
 
   nginx-proxy-manager:
     image: jc21/nginx-proxy-manager:latest
@@ -42,8 +43,40 @@ services:
     depends_on:
       - app
 
+  db-backup:
+    image: prodrigestivill/postgres-backup-local:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: smart_radio_monitor
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 6
+    volumes:
+      - ./backups/postgres:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+
+  volume-backup:
+    image: offen/docker-volume-backup:v2
+    restart: unless-stopped
+    environment:
+      BACKUP_CRON_EXPRESSION: "0 3 * * *"
+      BACKUP_FILENAME: "media-backup-%Y-%m-%dT%H-%M-%S.tar.gz"
+      BACKUP_RETENTION_DAYS: 14
+    volumes:
+      - media:/backup/media:ro
+      - npm_data:/backup/npm_data:ro
+      - npm_letsencrypt:/backup/npm_letsencrypt:ro
+      - ./backups/volumes:/archive
+
 volumes:
   postgres_data:
   whisper_cache:
   npm_data:
   npm_letsencrypt:
+  media:
