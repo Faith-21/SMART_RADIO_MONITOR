@@ -1,8 +1,10 @@
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    build-essential \
+RUN rm -rf /var/lib/apt/lists/* \
+    && apt-get update -o Acquire::By-Hash=no -o Acquire::Retries=3 \
+    && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
