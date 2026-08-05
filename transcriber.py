@@ -19,6 +19,8 @@ def capture_and_transcribe(stream_url, chunk_seconds=15):
         proc = subprocess.run(
             [
                     "ffmpeg", "-y",
+                    "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "-headers", "Icy-MetaData: 0\r\n",
                     "-fflags", "nobuffer+discardcorrupt",
                     "-flags", "low_delay",
                     "-rtbufsize", "32",
