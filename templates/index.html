@@ -193,6 +193,7 @@
     .line:hover .line-body { border-left-color: var(--green-mid); }
     .line.new .line-body { border-left-color: var(--red); background: var(--red-light); animation: highlight 2s ease forwards; }
     .line.has-keyword .line-body { border-left-color: var(--orange); }
+    .line-station { display: inline-block; font-family: 'DM Mono', monospace; font-size: 0.66rem; font-weight: 500; color: var(--green); background: var(--green-light); border: 1px solid #c8e6d0; border-radius: 4px; padding: 1px 6px; margin-right: 8px; vertical-align: 1px; }
     .station-banner { display: grid; grid-template-columns: 72px 1fr; gap: 14px; flex-shrink: 0; }
     .station-banner-body { background: var(--black); color: #4ade80; font-size: 0.8rem; font-weight: 600; padding: 8px 14px; border-radius: 0 8px 8px 0; border-left: 2px solid #4ade80; }
     .keyword-highlight { background: #fef08a; color: #713f12; padding: 1px 3px; border-radius: 3px; font-weight: 700; }
@@ -715,14 +716,25 @@
 
   // ── Select station ──
   function selectStation(url, name, country, genre) {
-    const isNew = currentStation && currentStation.url !== url;
+    const isNew = !currentStation || currentStation.url !== url;
     currentStation = { url, name, country, genre };
     document.getElementById("urlInput").value          = url;
     document.getElementById("playerName").textContent  = name;
     document.getElementById("playerMeta").textContent  = country + (genre ? " · " + genre : "");
     document.getElementById("statStation").textContent = name.split(" ")[0];
-    if (isNew && polling) addStationBanner(name);
+    // If we're already transcribing, hand the transcriber over to this station
+    // too — otherwise you'd hear one station and read another.
+    if (isNew && polling) switchTranscription(url, name);
     playStation(url);
+  }
+
+  function switchTranscription(url, name) {
+    addStationBanner(name);
+    fetch("/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, name, keep_transcript: true })
+    });
   }
 
   function playStation(url) {
@@ -895,10 +907,22 @@
     document.getElementById("statAlerts").textContent = alertCount;
   }
 
+  function escapeHtml(s) {
+    return (s || "").replace(/[&<>"']/g, c => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[c]);
+  }
+
+  // Keywords are plain words, not patterns — neutralise regex characters so a
+  // keyword like "C++" or "(fuel" can't break rendering for every line.
+  function escapeRegex(s) {
+    return (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
   function highlightKeywords(text) {
-    let result = text;
+    let result = escapeHtml(text);
     keywords.forEach(k => {
-      const regex = new RegExp(`(${k.word})`, "gi");
+      const regex = new RegExp(`(${escapeRegex(k.word)})`, "gi");
       result = result.replace(regex, '<span class="keyword-highlight">$1</span>');
     });
     return result;
@@ -911,14 +935,18 @@
         const box = document.getElementById("transcript");
         for (let i = knownLines; i < data.lines.length; i++) {
           const raw   = data.lines[i];
-          const match = raw.match(/^\[(\d{2}:\d{2}:\d{2})\]\s(?:\[.+?\]\s)?(.+)$/);
+          const match = raw.match(/^\[(\d{2}:\d{2}:\d{2})\]\s(?:\[(.+?)\]\s)?(.+)$/);
           const div   = document.createElement("div");
           div.className = "line new";
-          const text  = match ? match[2] : raw;
-          const time  = match ? match[1] : "";
+          const text    = match ? match[3] : raw;
+          const time    = match ? match[1] : "";
+          const station = match ? (match[2] || "") : "";
           const hasKw = keywords.some(k => text.toLowerCase().includes(k.word.toLowerCase()));
           if (hasKw) div.classList.add("has-keyword");
-          div.innerHTML = `<div class="line-time">${time}</div><div class="line-body">${highlightKeywords(text)}</div>`;
+          const stationTag = station
+            ? `<span class="line-station">${escapeHtml(station)}</span>`
+            : "";
+          div.innerHTML = `<div class="line-time">${time}</div><div class="line-body">${stationTag}${highlightKeywords(text)}</div>`;
           setTimeout(() => div.classList.remove("new"), 2500);
           box.appendChild(div);
           wordCount += text.split(/\s+/).length;

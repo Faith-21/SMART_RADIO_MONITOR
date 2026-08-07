@@ -97,11 +97,41 @@ def detect_keywords(text, station_name, transcript_obj):
     db.session.commit()
 
 
+def _stop_all_workers():
+    """Signal every running worker to stop, then forget them."""
+    for info in active_stations.values():
+        info["stop_event"].set()
+    active_stations.clear()
+
+
+def _start_worker(stream_url, station_name):
+    """Spawn a transcription worker for a single station."""
+    stop_event = threading.Event()
+    thread = threading.Thread(
+        target=transcription_worker,
+        args=(stream_url, station_name, stop_event),
+        daemon=True,
+    )
+    active_stations[stream_url] = {
+        "stop_event": stop_event,
+        "name":       station_name,
+        "thread":     thread,
+    }
+    thread.start()
+
+
 def transcription_worker(stream_url, station_name, stop_event):
     logger.info("Transcription worker started for '%s'", station_name)
     while not stop_event.is_set():
         try:
             text = capture_and_transcribe(stream_url)
+
+            # A capture takes 15-30s. If the user switched stations while it
+            # was running, this audio belongs to the previous station — drop it
+            # rather than appending it under the new station's heading.
+            if stop_event.is_set():
+                break
+
             if text:
                 timestamp = time.strftime("%H:%M:%S")
                 line = f"[{timestamp}] [{station_name}] {text}"
@@ -189,28 +219,23 @@ def proxy():
 @app.route("/start", methods=["POST"])
 def start():
     global transcript_lines
-    data         = request.get_json()
-    stream_url   = data.get("url")
-    station_name = data.get("name", "Unknown Station")
+    data            = request.get_json()
+    stream_url      = data.get("url")
+    station_name    = data.get("name", "Unknown Station")
+    # Switching stations mid-session keeps the transcript so far; pressing
+    # Start explicitly begins a fresh one.
+    keep_transcript = bool(data.get("keep_transcript"))
 
     if not stream_url:
         return {"error": "No URL"}, 400
 
-    # Signal all running workers to stop
-    for info in active_stations.values():
-        info["stop_event"].set()
-    active_stations.clear()
+    _stop_all_workers()
 
-    transcript_lines = []
-    stop_event = threading.Event()
-    active_stations[stream_url] = {"stop_event": stop_event, "name": station_name}
-    thread = threading.Thread(
-        target=transcription_worker,
-        args=(stream_url, station_name, stop_event),
-        daemon=True,
-    )
-    active_stations[stream_url]["thread"] = thread
-    thread.start()
+    if not keep_transcript:
+        with transcript_lock:
+            transcript_lines = []
+
+    _start_worker(stream_url, station_name)
 
     return {"status": "started", "station": station_name}
 
@@ -223,9 +248,7 @@ def stop():
         active_stations[url]["stop_event"].set()
         del active_stations[url]
     else:
-        for info in active_stations.values():
-            info["stop_event"].set()
-        active_stations.clear()
+        _stop_all_workers()
     return {"status": "stopped"}
 
 
