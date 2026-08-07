@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from flask import Flask, render_template, Response, request, stream_with_context
 
 from models import db, Station, AudioChunk, Transcript, Keyword, Alert, EmailRecipient, EmailConfig
-from transcriber import capture_and_transcribe
+from transcriber import capture_and_transcribe, CaptureError
 
 load_dotenv()
 
@@ -44,6 +44,25 @@ with app.app_context():
 active_stations  = {}
 transcript_lines = []
 transcript_lock  = threading.Lock()
+
+# What the transcriber is currently doing, so the UI can show it instead of
+# failing silently.
+status_lock   = threading.Lock()
+worker_status = {"station": None, "connected": False, "error": None}
+
+
+def set_status(station=None, connected=None, error=None):
+    with status_lock:
+        if station is not None:
+            worker_status["station"] = station
+        if connected is not None:
+            worker_status["connected"] = connected
+        worker_status["error"] = error
+
+
+def get_status():
+    with status_lock:
+        return dict(worker_status)
 
 
 def send_email_alert(keyword, station_name, matched_text):
@@ -117,6 +136,7 @@ def _start_worker(stream_url, station_name):
         "name":       station_name,
         "thread":     thread,
     }
+    set_status(station=station_name, connected=False, error=None)
     thread.start()
 
 
@@ -124,13 +144,15 @@ def transcription_worker(stream_url, station_name, stop_event):
     logger.info("Transcription worker started for '%s'", station_name)
     while not stop_event.is_set():
         try:
-            text = capture_and_transcribe(stream_url)
+            text = capture_and_transcribe(stream_url, stop_event=stop_event)
 
             # A capture takes 15-30s. If the user switched stations while it
             # was running, this audio belongs to the previous station — drop it
             # rather than appending it under the new station's heading.
             if stop_event.is_set():
                 break
+
+            set_status(connected=True, error=None)
 
             if text:
                 timestamp = time.strftime("%H:%M:%S")
@@ -153,10 +175,21 @@ def transcription_worker(stream_url, station_name, stop_event):
                     db.session.commit()
                     detect_keywords(text, station_name, transcript)
 
+        except CaptureError as e:
+            if stop_event.is_set():
+                break
+            logger.warning("Capture failed for '%s': %s", station_name, e)
+            set_status(connected=False, error=str(e))
+            stop_event.wait(5)  # Back off before retrying
+            continue
+
         except Exception as e:
+            if stop_event.is_set():
+                break
             logger.error(
                 "Transcription error for '%s': %s", station_name, e, exc_info=True
             )
+            set_status(connected=False, error=f"Unexpected error: {e}")
             stop_event.wait(5)  # Back off before retrying
             continue
 
@@ -249,6 +282,7 @@ def stop():
         del active_stations[url]
     else:
         _stop_all_workers()
+    set_status(station=None, connected=False, error=None)
     return {"status": "stopped"}
 
 
@@ -264,7 +298,8 @@ def get_active_stations():
 @app.route("/transcript")
 def transcript():
     with transcript_lock:
-        return {"lines": list(transcript_lines)}
+        lines = list(transcript_lines)
+    return {"lines": lines, "status": get_status()}
 
 
 @app.route("/export")
