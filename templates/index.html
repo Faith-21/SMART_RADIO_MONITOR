@@ -193,6 +193,8 @@
     .line:hover .line-body { border-left-color: var(--green-mid); }
     .line.new .line-body { border-left-color: var(--red); background: var(--red-light); animation: highlight 2s ease forwards; }
     .line.has-keyword .line-body { border-left-color: var(--orange); }
+    .stream-status { background: var(--red-light); border-bottom: 1px solid #fecaca; border-left: 3px solid var(--red); color: #7f1d1d; font-size: 0.82rem; line-height: 1.5; padding: 12px 22px; flex-shrink: 0; }
+    .line-station { display: inline-block; font-family: 'DM Mono', monospace; font-size: 0.66rem; font-weight: 500; color: var(--green); background: var(--green-light); border: 1px solid #c8e6d0; border-radius: 4px; padding: 1px 6px; margin-right: 8px; vertical-align: 1px; }
     .station-banner { display: grid; grid-template-columns: 72px 1fr; gap: 14px; flex-shrink: 0; }
     .station-banner-body { background: var(--black); color: #4ade80; font-size: 0.8rem; font-weight: 600; padding: 8px 14px; border-radius: 0 8px 8px 0; border-left: 2px solid #4ade80; }
     .keyword-highlight { background: #fef08a; color: #713f12; padding: 1px 3px; border-radius: 3px; font-weight: 700; }
@@ -410,6 +412,8 @@
           <input type="text" id="urlInput" placeholder="https://…/stream.mp3"/>
           <button class="btn btn-ghost" onclick="loadManualUrl()" style="padding:9px 12px;">→</button>
         </div>
+        <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;margin-top:8px;" onclick="testStream()">Test this stream</button>
+        <div id="streamTestResult" style="font-size:0.76rem;line-height:1.5;margin-top:8px;display:none;"></div>
       </div>
 
       <div class="player-block">
@@ -477,6 +481,7 @@
             <span id="statusText">Idle</span>
           </div>
         </div>
+        <div id="streamStatus" class="stream-status" style="display:none;"></div>
         <div id="transcript">
           <div class="empty-state">
             <div class="empty-icon"></div>
@@ -652,13 +657,13 @@
   // ── Directory ──
   const DIRECTORY = [
     // 🇿🇲 Zambian
-    { name: "Hot FM",           country: "Zambia", genre: "Music/News",  url: "https://tune.tunzilla.com/http://s2.yesstreaming.net:7091/stream" },
+    { name: "Hot FM",           country: "Zambia", genre: "Music/News",  url: "http://s2.yesstreaming.net:7091/stream" },
     { name: "Radio Christian Voice", country: "Zambia", genre: "Gospel",  url: "https://streaming.shoutcast.com/rcv" },
     { name: "Phoenix FM",       country: "Zambia", genre: "News/Talk",   url: "https://22183.live.streamtheworld.com/RADIO_PHOENIXAAC_SC?dist=onlineradiobox" },
     { name: "965 Rock FM",      country: "Zambia", genre: "Music/News",    url: "http://broadcast.shoutcheap.com:8702/stream" },
     { name: "Power FM",         country: "Zambia", genre: "Music",       url: "http://41.60.195.11:8000/stream.ogg" },
     { name: "Q FM Zambia",      country: "Zambia", genre: "Music",       url: "https://s3.myradiostream.com:7620/listen.mp3" },
-    { name: "Breeze FM",        country: "Zambia", genre: "Music/Talk",  url: "https://stream-287.zeno.fm/pwythexn1v8uv?zt=eyJhbGciOiJIUzI1NiJ9.eyJzdHJlYW0iOiJwd3l0aGV4bjF2OHV2IiwiaG9zdCI6InN0cmVhbS0yODcuemVuby5mbSIsInJ0dGwiOjUsImp0aSI6IlY5TjNtakZwVHFtX3NQVWFLZVl0d0EiLCJpYXQiOjE3ODAzOTQ1MzIsImV4cCI6MTc4MDM5NDU5Mn0.koUu8EUvyfKjbeCb7JiiAgxoHesH-6Ku8BIKbv72dRs" },
+    { name: "Breeze FM",        country: "Zambia", genre: "Music/Talk",  url: "https://stream.zeno.fm/pwythexn1v8uv" },
     // 🌍 International
     { name: "BBC World",        country: "UK",     genre: "News",        url: "http://stream.live.vc.bbcmedia.co.uk/bbc_world_service" },
     { name: "NPR News",         country: "US",     genre: "News",        url: "https://npr-ice.streamguys1.com/live.mp3" },
@@ -715,14 +720,25 @@
 
   // ── Select station ──
   function selectStation(url, name, country, genre) {
-    const isNew = currentStation && currentStation.url !== url;
+    const isNew = !currentStation || currentStation.url !== url;
     currentStation = { url, name, country, genre };
     document.getElementById("urlInput").value          = url;
     document.getElementById("playerName").textContent  = name;
     document.getElementById("playerMeta").textContent  = country + (genre ? " · " + genre : "");
     document.getElementById("statStation").textContent = name.split(" ")[0];
-    if (isNew && polling) addStationBanner(name);
+    // If we're already transcribing, hand the transcriber over to this station
+    // too — otherwise you'd hear one station and read another.
+    if (isNew && polling) switchTranscription(url, name);
     playStation(url);
+  }
+
+  function switchTranscription(url, name) {
+    addStationBanner(name);
+    fetch("/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, name, keep_transcript: true })
+    });
   }
 
   function playStation(url) {
@@ -758,6 +774,27 @@
   }
 
   function setVolume(v) { audio.volume = parseFloat(v); }
+
+  // Answers "is it my code or the station?" without starting transcription.
+  async function testStream() {
+    const url = document.getElementById("urlInput").value.trim();
+    const box = document.getElementById("streamTestResult");
+    if (!url) return alert("Select a station or paste a stream URL first.");
+
+    box.style.display = "block";
+    box.style.color   = "var(--ink-light)";
+    box.innerHTML     = '<span class="spinner"></span> Testing…';
+
+    try {
+      const res  = await fetch("/check_stream?url=" + encodeURIComponent(url));
+      const data = await res.json();
+      box.style.color = data.ok ? "var(--green)" : "var(--red)";
+      box.textContent = (data.ok ? "✓ " : "✕ ") + (data.reason || data.error || "Unknown result");
+    } catch (e) {
+      box.style.color = "var(--red)";
+      box.textContent = "✕ Could not run the test: " + e.message;
+    }
+  }
 
   function loadManualUrl() {
     const url = document.getElementById("urlInput").value.trim();
@@ -877,6 +914,10 @@
   function stopTranscription() {
     fetch("/stop", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({}) });
     clearInterval(polling); clearInterval(alertPolling);
+    // Leaving these set would make a later station click think transcription
+    // is still running and silently restart a worker.
+    polling = null; alertPolling = null;
+    document.getElementById("streamStatus").style.display = "none";
     document.getElementById("statusPill").classList.remove("active");
     document.getElementById("statusText").textContent = "Stopped";
     document.getElementById("statStatus").textContent = "Stopped";
@@ -895,10 +936,22 @@
     document.getElementById("statAlerts").textContent = alertCount;
   }
 
+  function escapeHtml(s) {
+    return (s || "").replace(/[&<>"']/g, c => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[c]);
+  }
+
+  // Keywords are plain words, not patterns — neutralise regex characters so a
+  // keyword like "C++" or "(fuel" can't break rendering for every line.
+  function escapeRegex(s) {
+    return (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
   function highlightKeywords(text) {
-    let result = text;
+    let result = escapeHtml(text);
     keywords.forEach(k => {
-      const regex = new RegExp(`(${k.word})`, "gi");
+      const regex = new RegExp(`(${escapeRegex(k.word)})`, "gi");
       result = result.replace(regex, '<span class="keyword-highlight">$1</span>');
     });
     return result;
@@ -911,22 +964,49 @@
         const box = document.getElementById("transcript");
         for (let i = knownLines; i < data.lines.length; i++) {
           const raw   = data.lines[i];
-          const match = raw.match(/^\[(\d{2}:\d{2}:\d{2})\]\s(?:\[.+?\]\s)?(.+)$/);
+          const match = raw.match(/^\[(\d{2}:\d{2}:\d{2})\]\s(?:\[(.+?)\]\s)?(.+)$/);
           const div   = document.createElement("div");
           div.className = "line new";
-          const text  = match ? match[2] : raw;
-          const time  = match ? match[1] : "";
+          const text    = match ? match[3] : raw;
+          const time    = match ? match[1] : "";
+          const station = match ? (match[2] || "") : "";
           const hasKw = keywords.some(k => text.toLowerCase().includes(k.word.toLowerCase()));
           if (hasKw) div.classList.add("has-keyword");
-          div.innerHTML = `<div class="line-time">${time}</div><div class="line-body">${highlightKeywords(text)}</div>`;
+          const stationTag = station
+            ? `<span class="line-station">${escapeHtml(station)}</span>`
+            : "";
+          div.innerHTML = `<div class="line-time">${time}</div><div class="line-body">${stationTag}${highlightKeywords(text)}</div>`;
           setTimeout(() => div.classList.remove("new"), 2500);
           box.appendChild(div);
           wordCount += text.split(/\s+/).length;
         }
         knownLines = data.lines.length;
         updateStats();
+        showStreamStatus(data.status);
         box.scrollTop = box.scrollHeight;
       });
+  }
+
+  // Surface capture failures instead of leaving the transcript mysteriously empty.
+  function showStreamStatus(status) {
+    const bar = document.getElementById("streamStatus");
+
+    // Show the station the *server* is transcribing, not the one the browser
+    // assumes — otherwise the header can claim a switch that never landed.
+    if (status && status.station) {
+      document.getElementById("statStation").textContent = status.station.split(" ")[0];
+      document.getElementById("statusText").textContent  =
+        status.connected ? "Transcribing " + status.station : "Connecting to " + status.station;
+    }
+
+    if (!status || !status.error) {
+      bar.style.display = "none";
+      return;
+    }
+    bar.style.display = "block";
+    bar.innerHTML =
+      `<strong>${escapeHtml(status.station || "Station")} isn't transcribing:</strong> ` +
+      escapeHtml(status.error);
   }
 
   function exportTranscript() { window.location.href = "/export"; }

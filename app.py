@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from flask import Flask, render_template, Response, request, stream_with_context
 
 from models import db, Station, AudioChunk, Transcript, Keyword, Alert, EmailRecipient, EmailConfig
-from transcriber import capture_and_transcribe
+from transcriber import capture_and_transcribe, CaptureError
 
 load_dotenv()
 
@@ -44,6 +44,31 @@ with app.app_context():
 active_stations  = {}
 transcript_lines = []
 transcript_lock  = threading.Lock()
+
+# Every worker is stamped with the generation it was started in. Only the
+# newest generation may write to the transcript, so a worker for a station the
+# user has already switched away from cannot contribute a line no matter how
+# its timing works out.
+worker_generation = 0
+
+# What the transcriber is currently doing, so the UI can show it instead of
+# failing silently.
+status_lock   = threading.Lock()
+worker_status = {"station": None, "connected": False, "error": None}
+
+
+def set_status(station=None, connected=None, error=None):
+    with status_lock:
+        if station is not None:
+            worker_status["station"] = station
+        if connected is not None:
+            worker_status["connected"] = connected
+        worker_status["error"] = error
+
+
+def get_status():
+    with status_lock:
+        return dict(worker_status)
 
 
 def send_email_alert(keyword, station_name, matched_text):
@@ -97,15 +122,64 @@ def detect_keywords(text, station_name, transcript_obj):
     db.session.commit()
 
 
-def transcription_worker(stream_url, station_name, stop_event):
+def _stop_all_workers():
+    """Signal every running worker to stop, then forget them."""
+    for info in active_stations.values():
+        info["stop_event"].set()
+    active_stations.clear()
+
+
+def _start_worker(stream_url, station_name):
+    """Spawn a transcription worker for a single station."""
+    global worker_generation
+
+    with transcript_lock:
+        worker_generation += 1
+        generation = worker_generation
+
+    stop_event = threading.Event()
+    thread = threading.Thread(
+        target=transcription_worker,
+        args=(stream_url, station_name, stop_event, generation),
+        daemon=True,
+    )
+    active_stations[stream_url] = {
+        "stop_event": stop_event,
+        "name":       station_name,
+        "thread":     thread,
+        "generation": generation,
+    }
+    set_status(station=station_name, connected=False, error=None)
+    thread.start()
+
+
+def _is_current(generation):
+    with transcript_lock:
+        return generation == worker_generation
+
+
+def transcription_worker(stream_url, station_name, stop_event, generation):
     logger.info("Transcription worker started for '%s'", station_name)
     while not stop_event.is_set():
         try:
-            text = capture_and_transcribe(stream_url)
+            text = capture_and_transcribe(stream_url, stop_event=stop_event)
+
+            # A capture takes 15-30s. If the user switched stations while it
+            # was running, this audio belongs to the previous station — drop it
+            # rather than appending it under the new station's heading.
+            if stop_event.is_set() or not _is_current(generation):
+                break
+
+            set_status(connected=True, error=None)
+
             if text:
                 timestamp = time.strftime("%H:%M:%S")
                 line = f"[{timestamp}] [{station_name}] {text}"
                 with transcript_lock:
+                    # Re-check under the lock: a switch may have landed while
+                    # we were transcribing.
+                    if generation != worker_generation:
+                        break
                     transcript_lines.append(line)
 
                 with app.app_context():
@@ -123,10 +197,21 @@ def transcription_worker(stream_url, station_name, stop_event):
                     db.session.commit()
                     detect_keywords(text, station_name, transcript)
 
+        except CaptureError as e:
+            if stop_event.is_set() or not _is_current(generation):
+                break
+            logger.warning("Capture failed for '%s': %s", station_name, e)
+            set_status(connected=False, error=str(e))
+            stop_event.wait(5)  # Back off before retrying
+            continue
+
         except Exception as e:
+            if stop_event.is_set() or not _is_current(generation):
+                break
             logger.error(
                 "Transcription error for '%s': %s", station_name, e, exc_info=True
             )
+            set_status(connected=False, error=f"Unexpected error: {e}")
             stop_event.wait(5)  # Back off before retrying
             continue
 
@@ -137,7 +222,74 @@ def transcription_worker(stream_url, station_name, stop_event):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    # Never let a browser reuse an old copy of the page: a cached copy of the
+    # JavaScript makes fixes look like they had no effect.
+    response = app.make_response(render_template("index.html"))
+    response.headers["Cache-Control"] = "no-store, must-revalidate"
+    return response
+
+
+@app.route("/check_stream")
+def check_stream():
+    """Report whether a stream URL can actually be read, and why not."""
+    url = request.args.get("url")
+    if not url:
+        return {"error": "No URL provided"}, 400
+
+    try:
+        req = requests.get(url, stream=True, timeout=12, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "*/*",
+            "Icy-MetaData": "0",
+        })
+    except requests.exceptions.Timeout:
+        return {"ok": False, "reason": "The station did not respond in time (timeout)."}
+    except requests.exceptions.SSLError:
+        return {"ok": False, "reason": "The station's HTTPS certificate could not be verified."}
+    except requests.exceptions.ConnectionError:
+        return {"ok": False, "reason": "Could not connect — the address is dead, blocked, or the port is closed."}
+    except Exception as e:
+        return {"ok": False, "reason": f"Could not connect: {e}"}
+
+    try:
+        if req.status_code >= 400:
+            reasons = {
+                401: "The stream requires a login (401).",
+                403: "The station refused us (403) — it blocks clients like this.",
+                404: "No stream at this address (404) — the URL is wrong or retired.",
+            }
+            return {
+                "ok": False,
+                "reason": reasons.get(
+                    req.status_code,
+                    f"The station returned an error ({req.status_code}).",
+                ),
+            }
+
+        content_type = (req.headers.get("Content-Type") or "").lower()
+        if "html" in content_type:
+            return {
+                "ok": False,
+                "reason": "This is a web page, not an audio stream. Look for the station's direct stream link.",
+            }
+
+        # Pull a little audio to prove data really flows.
+        received = 0
+        for chunk in req.iter_content(chunk_size=4096):
+            received += len(chunk or b"")
+            if received >= 8192:
+                break
+
+        if received == 0:
+            return {"ok": False, "reason": "Connected, but the station sent no audio."}
+
+        return {
+            "ok": True,
+            "reason": f"Working — audio is flowing ({content_type or 'unknown format'}).",
+            "content_type": content_type,
+        }
+    finally:
+        req.close()
 
 
 @app.route("/proxy")
@@ -164,12 +316,17 @@ def proxy():
             content_type = "audio/aac"
 
         def generate():
+            # Always release the upstream connection. Without this, switching
+            # stations leaks the old stream and its worker thread, and the pool
+            # eventually fills up so ordinary requests stop being served.
             try:
                 for chunk in req.iter_content(chunk_size=16384):
                     if chunk:
                         yield chunk
             except Exception:
                 pass
+            finally:
+                req.close()
 
         return Response(
             stream_with_context(generate()),
@@ -189,28 +346,23 @@ def proxy():
 @app.route("/start", methods=["POST"])
 def start():
     global transcript_lines
-    data         = request.get_json()
-    stream_url   = data.get("url")
-    station_name = data.get("name", "Unknown Station")
+    data            = request.get_json()
+    stream_url      = data.get("url")
+    station_name    = data.get("name", "Unknown Station")
+    # Switching stations mid-session keeps the transcript so far; pressing
+    # Start explicitly begins a fresh one.
+    keep_transcript = bool(data.get("keep_transcript"))
 
     if not stream_url:
         return {"error": "No URL"}, 400
 
-    # Signal all running workers to stop
-    for info in active_stations.values():
-        info["stop_event"].set()
-    active_stations.clear()
+    _stop_all_workers()
 
-    transcript_lines = []
-    stop_event = threading.Event()
-    active_stations[stream_url] = {"stop_event": stop_event, "name": station_name}
-    thread = threading.Thread(
-        target=transcription_worker,
-        args=(stream_url, station_name, stop_event),
-        daemon=True,
-    )
-    active_stations[stream_url]["thread"] = thread
-    thread.start()
+    if not keep_transcript:
+        with transcript_lock:
+            transcript_lines = []
+
+    _start_worker(stream_url, station_name)
 
     return {"status": "started", "station": station_name}
 
@@ -223,9 +375,8 @@ def stop():
         active_stations[url]["stop_event"].set()
         del active_stations[url]
     else:
-        for info in active_stations.values():
-            info["stop_event"].set()
-        active_stations.clear()
+        _stop_all_workers()
+    set_status(station=None, connected=False, error=None)
     return {"status": "stopped"}
 
 
@@ -241,7 +392,8 @@ def get_active_stations():
 @app.route("/transcript")
 def transcript():
     with transcript_lock:
-        return {"lines": list(transcript_lines)}
+        lines = list(transcript_lines)
+    return {"lines": lines, "status": get_status()}
 
 
 @app.route("/export")
