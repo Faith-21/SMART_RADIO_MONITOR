@@ -412,6 +412,8 @@
           <input type="text" id="urlInput" placeholder="https://…/stream.mp3"/>
           <button class="btn btn-ghost" onclick="loadManualUrl()" style="padding:9px 12px;">→</button>
         </div>
+        <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;margin-top:8px;" onclick="testStream()">Test this stream</button>
+        <div id="streamTestResult" style="font-size:0.76rem;line-height:1.5;margin-top:8px;display:none;"></div>
       </div>
 
       <div class="player-block">
@@ -773,6 +775,27 @@
 
   function setVolume(v) { audio.volume = parseFloat(v); }
 
+  // Answers "is it my code or the station?" without starting transcription.
+  async function testStream() {
+    const url = document.getElementById("urlInput").value.trim();
+    const box = document.getElementById("streamTestResult");
+    if (!url) return alert("Select a station or paste a stream URL first.");
+
+    box.style.display = "block";
+    box.style.color   = "var(--ink-light)";
+    box.innerHTML     = '<span class="spinner"></span> Testing…';
+
+    try {
+      const res  = await fetch("/check_stream?url=" + encodeURIComponent(url));
+      const data = await res.json();
+      box.style.color = data.ok ? "var(--green)" : "var(--red)";
+      box.textContent = (data.ok ? "✓ " : "✕ ") + (data.reason || data.error || "Unknown result");
+    } catch (e) {
+      box.style.color = "var(--red)";
+      box.textContent = "✕ Could not run the test: " + e.message;
+    }
+  }
+
   function loadManualUrl() {
     const url = document.getElementById("urlInput").value.trim();
     if (!url) return;
@@ -967,6 +990,15 @@
   // Surface capture failures instead of leaving the transcript mysteriously empty.
   function showStreamStatus(status) {
     const bar = document.getElementById("streamStatus");
+
+    // Show the station the *server* is transcribing, not the one the browser
+    // assumes — otherwise the header can claim a switch that never landed.
+    if (status && status.station) {
+      document.getElementById("statStation").textContent = status.station.split(" ")[0];
+      document.getElementById("statusText").textContent  =
+        status.connected ? "Transcribing " + status.station : "Connecting to " + status.station;
+    }
+
     if (!status || !status.error) {
       bar.style.display = "none";
       return;
