@@ -29,7 +29,7 @@ app = Flask(__name__)
 # ── Database config ──
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
     "DB_URL",
-    "postgresql://postgres:password246@localhost:5432/smart_radio_monitor"
+    "postgresql://postgres:galvanize@127.0.0.1:5432/smart_radio_monitor"
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
@@ -54,8 +54,10 @@ def send_email_alert(keyword, station_name, matched_text):
         recipients = EmailRecipient.query.filter_by(active=True).all()
         if not recipients:
             return
-        sender   = config.sender
-        password = config.password
+        sender     = config.sender
+        password   = config.password
+        # Copy plain values before the context closes and detaches the ORM objects
+        recipient_emails = [r.email for r in recipients]
 
     try:
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
@@ -63,10 +65,10 @@ def send_email_alert(keyword, station_name, matched_text):
             server.starttls()
             server.ehlo()
             server.login(sender, password)
-            for r in recipients:
+            for email in recipient_emails:
                 msg = MIMEMultipart()
                 msg["From"]    = sender
-                msg["To"]      = r.email
+                msg["To"]      = email
                 msg["Subject"] = f"Smart Radio Monitor — Keyword Detected: {keyword}"
                 body = (
                     f"Smart Radio Monitor Alert\n\n"
@@ -76,7 +78,7 @@ def send_email_alert(keyword, station_name, matched_text):
                     f"Transcript excerpt:\n{matched_text}\n\n---\nSmart Radio Monitor"
                 )
                 msg.attach(MIMEText(body, "plain"))
-                server.sendmail(sender, r.email, msg.as_string())
+                server.sendmail(sender, email, msg.as_string())
         logger.info("Email alert sent for keyword: %s", keyword)
     except Exception as e:
         logger.error("Email failed: %s", e)
@@ -179,7 +181,6 @@ def proxy():
                 "Access-Control-Allow-Origin": "*",
                 "Cache-Control": "no-cache",
                 "Accept-Ranges": "none",
-                "Transfer-Encoding": "chunked",
             },
         )
     except Exception as e:

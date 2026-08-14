@@ -4,7 +4,6 @@ import os
 import logging
 
 import whisper
-import numpy as np
 
 logger = logging.getLogger(__name__)
 

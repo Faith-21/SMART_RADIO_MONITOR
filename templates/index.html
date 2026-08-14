@@ -652,7 +652,7 @@
   // ── Directory ──
   const DIRECTORY = [
     // 🇿🇲 Zambian
-    { name: "Hot FM",           country: "Zambia", genre: "Music/News",  url: "https://tune.tunzilla.com/http://s2.yesstreaming.net:7091/stream" },
+    { name: "Hot FM",           country: "Zambia", genre: "Music/News",  url: "https://radio.garden/api/ara/content/listen/9OaNJWsU/channel.mp3" },
     { name: "Radio Christian Voice", country: "Zambia", genre: "Gospel",  url: "https://streaming.shoutcast.com/rcv" },
     { name: "Phoenix FM",       country: "Zambia", genre: "News/Talk",   url: "https://22183.live.streamtheworld.com/RADIO_PHOENIXAAC_SC?dist=onlineradiobox" },
     { name: "965 Rock FM",      country: "Zambia", genre: "Music/News",    url: "http://broadcast.shoutcheap.com:8702/stream" },
@@ -895,10 +895,12 @@
     document.getElementById("statAlerts").textContent = alertCount;
   }
 
+  function escRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
   function highlightKeywords(text) {
     let result = text;
     keywords.forEach(k => {
-      const regex = new RegExp(`(${k.word})`, "gi");
+      const regex = new RegExp(`(${escRegex(k.word)})`, "gi");
       result = result.replace(regex, '<span class="keyword-highlight">$1</span>');
     });
     return result;
@@ -1026,10 +1028,10 @@
     }
 
     list.innerHTML = data.results.map(r => {
-      const highlighted = q ? r.text.replace(new RegExp(`(${q})`, "gi"), '<span class="result-highlight">$1</span>') : r.text;
+      const highlighted = q ? r.text.replace(new RegExp(`(${escRegex(q)})`, "gi"), '<span class="result-highlight">$1</span>') : r.text;
       return `
         <div class="search-result-item">
-        <div class="result-meta"> ${r.created_at} &nbsp;|&nbsp;  ${r.station_name || 'Unknown Station'}</div          
+        <div class="result-meta"> ${r.created_at} &nbsp;|&nbsp;  ${r.station_name || 'Unknown Station'}</div>
         <div class="result-text">${highlighted}</div>
         </div>`;
     }).join("");
