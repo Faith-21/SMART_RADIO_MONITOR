@@ -549,28 +549,42 @@
       </div>
     </div>
 
-    <!-- SMTP Config -->
-    <div class="settings-card">
-      <h2>Email Configuration</h2>
-      <p>Configure your Gmail account to send alert emails. You need a Gmail App Password — see instructions below.</p>
+    <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;">
+      <!-- SMTP Config -->
+      <div class="settings-card" style="flex:1;min-width:320px;">
+        <h2>Email Configuration</h2>
+        <p>Configure your Gmail account to send alert emails. You need a Gmail App Password — see instructions to the right.</p>
 
-      <div class="form-group">
-        <div class="form-label">Sender Gmail Address</div>
-        <input type="text" id="emailSender" placeholder="youraddress@gmail.com"/>
-      </div>
-      <div class="form-group">
-        <div class="form-label">Gmail App Password</div>
-        <input type="password" id="emailPassword" placeholder="xxxx xxxx xxxx xxxx"/>
+        <div class="form-group">
+          <div class="form-label">Sender Gmail Address</div>
+          <input type="text" id="emailSender" placeholder="youraddress@gmail.com"/>
+        </div>
+        <div class="form-group">
+          <div class="form-label">Gmail App Password</div>
+          <input type="password" id="emailPassword" placeholder="xxxx xxxx xxxx xxxx"/>
+        </div>
+
+        <div class="toggle-row">
+          <div class="toggle-label">Enable Email Alerts</div>
+          <button class="toggle" id="emailToggle" onclick="toggleEmail()"></button>
+        </div>
+
+        <div style="margin-top:16px;display:flex;align-items:center;gap:12px;">
+          <button class="btn btn-primary" onclick="saveEmailConfig()">Save Configuration</button>
+          <span class="save-msg" id="saveMsg">✓ Saved!</span>
+        </div>
       </div>
 
-      <div class="toggle-row">
-        <div class="toggle-label">Enable Email Alerts</div>
-        <button class="toggle" id="emailToggle" onclick="toggleEmail()"></button>
-      </div>
-
-      <div style="margin-top:16px;display:flex;align-items:center;gap:12px;">
-        <button class="btn btn-primary" onclick="saveEmailConfig()">Save Configuration</button>
-        <span class="save-msg" id="saveMsg">✓ Saved!</span>
+      <!-- Instructions -->
+      <div class="settings-card" style="flex:1;min-width:320px;">
+        <h2>How to get a Gmail App Password</h2>
+        <p>
+          1. Go to your Google Account → Security<br>
+          2. Enable 2-Step Verification if not already on<br>
+          3. Search for "App Passwords" in your Google Account<br>
+          4. Create a new App Password for "Mail"<br>
+          5. Copy the 16-character password and paste it above
+        </p>
       </div>
     </div>
 
@@ -588,18 +602,6 @@
       <div id="recipientsList" style="display:flex;flex-direction:column;gap:8px;">
         <p class="no-results">No recipients added yet.</p>
       </div>
-    </div>
-
-    <!-- Instructions -->
-    <div class="settings-card">
-      <h2>How to get a Gmail App Password</h2>
-      <p>
-        1. Go to your Google Account → Security<br>
-        2. Enable 2-Step Verification if not already on<br>
-        3. Search for "App Passwords" in your Google Account<br>
-        4. Create a new App Password for "Mail"<br>
-        5. Copy the 16-character password and paste it above
-      </p>
     </div>
   </div>
 </div>
